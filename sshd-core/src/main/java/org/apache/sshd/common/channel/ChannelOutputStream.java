@@ -21,6 +21,7 @@ package org.apache.sshd.common.channel;
 import java.io.IOException;
 import java.io.InterruptedIOException;
 import java.io.OutputStream;
+import java.util.concurrent.TimeUnit;
 
 import org.apache.sshd.common.SshConstants;
 import org.apache.sshd.common.SshException;
@@ -44,6 +45,8 @@ public class ChannelOutputStream extends OutputStream {
     private int bufferLength;
     private int lastSize;
     private boolean noDelay = false;
+    private final long maxWaitTimeout = TimeUnit.SECONDS.toMillis(30L);
+
 
     public ChannelOutputStream(AbstractChannel channel, Window remoteWindow, Logger log, SshConstants.Message cmd) {
         this.channel = channel;
@@ -84,7 +87,7 @@ public class ChannelOutputStream extends OutputStream {
                     flush();
                 } else {
                     try {
-                        remoteWindow.waitForSpace();
+                        remoteWindow.waitForSpace(maxWaitTimeout);
                     } catch (WindowClosedException e) {
                         closed = true;
                         throw e;
@@ -113,7 +116,7 @@ public class ChannelOutputStream extends OutputStream {
             while (bufferLength > 0) {
                 Buffer buf = buffer;
                 int total = bufferLength;
-                int length = Math.min(Math.min(remoteWindow.waitForSpace(), total), remoteWindow.getPacketSize());
+                int length = Math.min(Math.min(remoteWindow.waitForSpace(maxWaitTimeout), total), remoteWindow.getPacketSize());
                 int pos = buf.wpos();
                 buf.wpos(cmd == SshConstants.Message.SSH_MSG_CHANNEL_EXTENDED_DATA ? 14 : 10);
                 buf.putInt(length);
@@ -127,7 +130,7 @@ public class ChannelOutputStream extends OutputStream {
                     bufferLength = leftover;
                 }
                 lastSize = length;
-                remoteWindow.waitAndConsume(length);
+                remoteWindow.waitAndConsume(length,maxWaitTimeout);
                 log.debug("Send {} on channel {}", cmd, channel.getId());
                 channel.writePacket(buf);
             }
